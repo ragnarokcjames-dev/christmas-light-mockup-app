@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Customer {
   id: string;
@@ -20,6 +21,8 @@ interface Mockup {
 }
 
 export default function CustomerPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [mockups, setMockups] = useState<Mockup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +35,16 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState('');
   const [demoMode, setDemoMode] = useState(false);
 
+  // Editing customer info
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const [deletingCustomer, setDeletingCustomer] = useState(false);
+  const [deletingMockupId, setDeletingMockupId] = useState<string | null>(null);
+
   async function load() {
     setLoading(true);
     const res = await fetch(`/api/customers/${params.id}`);
@@ -42,6 +55,8 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
     }
     const data = await res.json();
     setCustomer(data.customer);
+    setEditName(data.customer.name);
+    setEditAddress(data.customer.address);
     setMockups(data.mockups || []);
     setLoading(false);
   }
@@ -89,6 +104,80 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
     setGenerating(false);
   }
 
+  function startEditing() {
+    if (!customer) return;
+    setEditName(customer.name);
+    setEditAddress(customer.address);
+    setEditError('');
+    setIsEditing(true);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setEditError('');
+
+    if (!editName.trim() || !editAddress.trim()) {
+      setEditError('Both name and address are required.');
+      return;
+    }
+
+    setSavingEdit(true);
+    const res = await fetch(`/api/customers/${params.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editName, address: editAddress }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setEditError(data.error || 'Could not save changes.');
+      setSavingEdit(false);
+      return;
+    }
+
+    setCustomer(data.customer);
+    setSavingEdit(false);
+    setIsEditing(false);
+  }
+
+  async function handleDeleteCustomer() {
+    if (!customer) return;
+    const confirmed = window.confirm(
+      `Delete ${customer.name} and all their saved mockups? This can't be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingCustomer(true);
+    const res = await fetch(`/api/customers/${params.id}`, {
+      method: 'DELETE',
+    });
+
+    if (!res.ok) {
+      setDeletingCustomer(false);
+      alert('Could not delete this customer. Try again.');
+      return;
+    }
+
+    router.push('/');
+  }
+
+  async function handleDeleteMockup(mockupId: string) {
+    const confirmed = window.confirm('Delete this mockup?');
+    if (!confirmed) return;
+
+    setDeletingMockupId(mockupId);
+    const res = await fetch(`/api/mockups/${mockupId}`, { method: 'DELETE' });
+
+    if (!res.ok) {
+      setDeletingMockupId(null);
+      alert('Could not delete this mockup. Try again.');
+      return;
+    }
+
+    setMockups((prev) => prev.filter((m) => m.id !== mockupId));
+    setDeletingMockupId(null);
+  }
+
   if (loading) return <p style={{ color: 'var(--muted)' }}>Loading...</p>;
   if (notFound)
     return (
@@ -105,8 +194,81 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
         ← all customers
       </Link>
 
-      <h1 style={{ fontSize: 26 }}>{customer.name}</h1>
-      <p style={{ color: 'var(--muted)', marginTop: 4 }}>{customer.address}</p>
+      {isEditing ? (
+        <form
+          onSubmit={handleSaveEdit}
+          className="card"
+          style={{ maxWidth: 420, marginBottom: 8 }}
+        >
+          <div className="field">
+            <label htmlFor="editName">Customer name</label>
+            <input
+              id="editName"
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="editAddress">Address</label>
+            <input
+              id="editAddress"
+              type="text"
+              value={editAddress}
+              onChange={(e) => setEditAddress(e.target.value)}
+            />
+          </div>
+          {editError && <div className="error-text">{editError}</div>}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button className="btn" type="submit" disabled={savingEdit}>
+              {savingEdit ? 'Saving...' : 'Save changes'}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              style={{ background: 'transparent', color: 'var(--muted)' }}
+              onClick={() => setIsEditing(false)}
+              disabled={savingEdit}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div>
+            <h1 style={{ fontSize: 26 }}>{customer.name}</h1>
+            <p style={{ color: 'var(--muted)', marginTop: 4 }}>
+              {customer.address}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn"
+              style={{ background: 'transparent', color: 'var(--evergreen-dark)', border: '1px solid var(--border)' }}
+              onClick={startEditing}
+            >
+              Edit info
+            </button>
+            <button
+              className="btn"
+              style={{ background: 'transparent', color: 'var(--wreath-red)', border: '1px solid var(--wreath-red)' }}
+              onClick={handleDeleteCustomer}
+              disabled={deletingCustomer}
+            >
+              {deletingCustomer ? 'Deleting...' : 'Delete customer'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="light-strand">
         {Array.from({ length: 24 }).map((_, i) => (
@@ -177,19 +339,41 @@ export default function CustomerPage({ params }: { params: { id: string } }) {
           ) : (
             <div className="mockup-grid">
               {mockups.map((m) => (
-                <a
-                  key={m.id}
-                  href={m.mockup_image_path}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mockup-tile"
-                  style={{ textDecoration: 'none' }}
-                >
-                  <img src={m.mockup_image_path} alt="Generated mockup" />
-                  <div className="tile-meta">
-                    {new Date(m.created_at).toLocaleString()}
-                  </div>
-                </a>
+                <div key={m.id} className="mockup-tile" style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => handleDeleteMockup(m.id)}
+                    disabled={deletingMockupId === m.id}
+                    title="Delete this mockup"
+                    style={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      zIndex: 2,
+                      background: 'rgba(22, 48, 42, 0.85)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      width: 26,
+                      height: 26,
+                      fontSize: 14,
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {deletingMockupId === m.id ? '…' : '✕'}
+                  </button>
+                  <a
+                    href={m.mockup_image_path}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: 'none', display: 'block' }}
+                  >
+                    <img src={m.mockup_image_path} alt="Generated mockup" />
+                    <div className="tile-meta">
+                      {new Date(m.created_at).toLocaleString()}
+                    </div>
+                  </a>
+                </div>
               ))}
             </div>
           )}

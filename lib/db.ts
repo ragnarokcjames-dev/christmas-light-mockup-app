@@ -90,4 +90,31 @@ export function getMockupsForCustomer(customerId: string): Mockup[] {
   ) as unknown as Mockup[];
 }
 
+export function updateCustomer(
+  id: string,
+  updates: { name: string; address: string }
+) {
+  db.run(`UPDATE customers SET name = ?, address = ? WHERE id = ?`, [
+    updates.name,
+    updates.address,
+    id,
+  ]);
+}
+
+export function deleteCustomer(id: string) {
+  db.run(`DELETE FROM mockups WHERE customer_id = ?`, [id]);
+  db.run(`DELETE FROM customers WHERE id = ?`, [id]);
+}
+
+export function getMockup(id: string): Mockup | undefined {
+  const rows = db.all(`SELECT * FROM mockups WHERE id = ?`, [
+    id,
+  ]) as unknown as Mockup[];
+  return rows[0];
+}
+
+export function deleteMockup(id: string) {
+  db.run(`DELETE FROM mockups WHERE id = ?`, [id]);
+}
+
 export default db;
